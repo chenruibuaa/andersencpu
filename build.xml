@@ -1,0 +1,181 @@
+<!--
+Galois, a framework to exploit amorphous data-parallelism in irregular
+programs.
+
+Copyright (C) 2010, The University of Texas at Austin. All rights reserved.
+UNIVERSITY EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES CONCERNING THIS SOFTWARE
+AND DOCUMENTATION, INCLUDING ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR ANY
+PARTICULAR PURPOSE, NON-INFRINGEMENT AND WARRANTIES OF PERFORMANCE, AND ANY
+WARRANTY THAT MIGHT OTHERWISE ARISE FROM COURSE OF DEALING OR USAGE OF TRADE.
+NO WARRANTY IS EITHER EXPRESS OR IMPLIED WITH RESPECT TO THE USE OF THE
+SOFTWARE OR DOCUMENTATION. Under no circumstances shall University be liable
+for incidental, special, indirect, direct or consequential damages or loss of
+profits, interruption of business, or related expenses which may arise from use
+of Software or Documentation, including but not limited to those resulting from
+defects in Software and/or Documentation, or loss or inaccuracy of data of any
+kind.
+
+
+-->
+
+<project name="Galois" basedir="." default="help">
+    <property name="conf" location="${basedir}/conf"/>
+    <property name="classes" value="${basedir}/classes"/>
+    <property name="lib" location="${basedir}/lib"/>
+    <property name="src" value="${basedir}/src"/>
+    <property name="src-gen" value="${basedir}/src-gen"/>
+    <property name="apps" value="${basedir}/apps"/>
+    <property name="javadoc" value="${basedir}/javadoc"/>
+    <property name="javadoc-private" value="${basedir}/javadoc-private"/>
+    <property name="dist" value="${basedir}/dist"/>
+
+    <path id="classpath.lib">
+        <fileset dir="${lib}">
+            <include name="**/*.jar"/>
+        </fileset>
+    </path>
+
+    <!-- custom tasks -->
+    <taskdef resource="iss/isstasks" classpathref="classpath.lib"/>
+
+   
+    <fail message="Found ${ant.version}. Please install using at least Ant 1.7.">
+      <condition>
+        <and>
+          <not>
+            <contains string="${ant.version}" substring="1.7"/>
+          </not>
+          <not>
+            <contains string="${ant.version}" substring="1.8"/>
+          </not>
+        </and>
+      </condition>
+    </fail>
+    <fail message="Found ${java.vm.name} ${java.version}. Galois requires Java Hotspot VM ${required-jvm} and up.">
+        <condition>
+            <not>
+                <contains string="${ant.java.version}" substring="1.6"/>
+            </not>
+        </condition>
+    </fail>
+
+    <target name="init">
+        <mkdir dir="${classes}"/>
+    </target>
+
+    <target name="compile" depends="init">
+        <javac classpathref="classpath.lib" destdir="${classes}" debug="true" includeAntRuntime="false">
+            <src path="${src}"/>
+        </javac>
+    </target>
+
+    <target name="compile-app" depends="compile, check-app">
+        <javac destdir="${classes}" debug="true">
+            <src path="${apps}/${app}"/>
+            <classpath>
+                <path refid="classpath.lib"/>
+                <pathelement location="${classes}"/>
+            </classpath>
+        </javac>
+    </target>
+
+    <target name="check-app">
+        <fail unless="app" message="Please specify an app (-Dapp=APP)"/>
+    </target>
+
+    <target name="dist-app" depends="compile-app">
+        <path id="app.lib">
+            <path refid="classpath.lib"/>
+            <fileset dir="${apps}/${app}" includes="lib/**/*.jar"/>
+        </path>
+        <manifestclasspath property="app-path" jarfile="${classes}/${app}.jar">
+            <classpath refid="app.lib"/>
+        </manifestclasspath>
+        <jar destfile="${classes}/${app}.jar">
+            <fileset dir="${classes}">
+                <include name="**/*.class"/>
+            </fileset>
+            <manifest>
+                <attribute name="Class-Path" value="${app-path}"/>
+            </manifest>
+        </jar>
+    </target>
+
+    <!-- Please do not invoke this task from ant, instead use the scirpts/codeFormatter.py to
+perform the same task -->
+    <!-- format the Java files contained in the comma-separated 'format.java-files' property-->
+    <target name="format">
+        <indent config="${conf}/org.eclipse.jdt.core.prefs" verbose="true">
+            <fileset dir="${basedir}" includes="${format.java-files}"/>
+        </indent>
+    </target>
+
+    <target name="javadoc">
+      <javadoc destdir="${javadoc}"
+          linksource="yes"
+          classpathref="classpath.lib"
+          overview="${src}/overview.html"
+          failonerror="yes">
+            <link href="http://www.cs.rice.edu/~javaplt/javadoc/concjunit4.7"/>
+            <link href="http://java.sun.com/javase/6/docs/api" />
+            <fileset dir="${src}">
+                <include name="**/*.java"/>
+            </fileset>
+        </javadoc>
+    </target>
+
+    <target name="javadoc-private">
+      <javadoc destdir="${javadoc-private}"
+          linksource="yes"
+          classpathref="classpath.lib"
+          overview="${src}/overview.html"
+          package="yes"
+          failonerror="yes">
+            <link href="http://www.cs.rice.edu/~javaplt/javadoc/concjunit4.7"/>
+            <link href="http://java.sun.com/javase/6/docs/api" />
+            <fileset dir="${src}">
+                <include name="**/*.java"/>
+            </fileset>
+        </javadoc>
+    </target>
+
+    <target name="clean" description="clean up">
+        <delete dir="${classes}"/>
+        <delete dir="${src-gen}"/>
+    </target>
+
+    <target name="distclean" depends="clean">
+        <delete dir="${javadoc}"/>
+        <delete dir="${javadoc-private}"/>
+    </target>
+
+    <target name="help">
+        <loadfile property="message" srcFile="help.txt"/>
+        <echo message="${message}"/>
+    </target>
+
+    <target name="dist">
+        <fail unless="dist.name" message="Please indicate the name of the project (-Ddist.name=NAME)."/>
+        <fail unless="dist.version" message="Please indicate the release version (-Ddist.version=VERSION)."/>
+        <property name="excludes-file" value="${dist}/exclude"/>
+        <svn-st outputfile="${excludes-file}"/>
+        <concat destfile="${excludes-file}" append="true">
+            <filelist dir="${dist}" files="${dist.name}.exclude"/>
+        </concat>
+        <!-- the tar task will exclude certain directories/files, known as default excludes -->
+        <!-- http://ant.apache.org/manual/dirtasks.html -->
+        <tar destfile="${dist}/${dist.name}-${dist.version}.tar.gz" compression="gzip">
+            <tarfileset dir="${basedir}" prefix="${dist.name}-${dist.version}"
+                        includesfile="${dist}/${dist.name}.include" excludesfile="${excludes-file}"/>
+            <tarfileset dir="${basedir}" prefix="${dist.name}-${dist.version}"
+                        includesfile="${dist}/${dist.name}.includeexec"
+                        filemode="755"/>
+        </tar>
+        <delete file="${excludes-file}"/>
+    </target>
+
+  <target name="init-src-gen">
+    <mkdir dir="${src-gen}"/>
+  </target>
+
+</project>
